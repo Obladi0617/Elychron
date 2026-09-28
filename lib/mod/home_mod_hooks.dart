@@ -305,7 +305,11 @@ class HomeModHooks {
       _handleShared(items);
 
   Future<void> _handleShared(List<SharedItem> items) async {
-    if (items.isEmpty || _handlingShare) return;
+    if (items.isEmpty) return;
+    if (_handlingShare) {
+      _pendingShares.addAll(items);
+      return;
+    }
     if (_isFocusRunning()) {
       // 专注中：攒着，每 3 秒看一眼是否结束了
       _pendingShares.addAll(items);
@@ -479,7 +483,13 @@ class HomeModHooks {
       controller.updateDeadlineListTime();
       controller.taskList.refresh();
     } finally {
+      await ShareReceiver.acknowledge(items);
       _handlingShare = false;
+      if (_pendingShares.isNotEmpty && !_isFocusRunning()) {
+        final pending = List<SharedItem>.from(_pendingShares);
+        _pendingShares.clear();
+        unawaited(_handleShared(pending));
+      }
     }
   }
 

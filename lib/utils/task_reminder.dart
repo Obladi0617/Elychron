@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/design/task_detail_nav.dart';
 import 'package:celechron/model/task.dart';
+import 'package:celechron/mod/system_alarm.dart';
 import 'package:celechron/services/diagnostic_log_service.dart';
 import 'package:celechron/utils/task_alarm_center.dart';
 import 'package:celechron/utils/global.dart';
@@ -370,6 +371,7 @@ class TaskReminder {
         final id = _idOf(task.uid);
         try {
           await _plugin.cancel(id);
+          if (Platform.isIOS) await SystemAlarm.cancelTask(task.uid);
           if (_shouldSchedule(task)) {
             await _requestExactAlarmOnce();
             final when = _fireTimeOf(task);
@@ -424,11 +426,22 @@ class TaskReminder {
       _snoozed.remove(uid);
       try {
         await _plugin.cancel(_idOf(uid));
+        if (Platform.isIOS && !uid.startsWith('sub:')) {
+          await SystemAlarm.cancelTask(uid);
+        }
       } catch (_) {}
     }
   }
 
   static Future<void> _schedule(Task task, int id, DateTime when) async {
+    if (Platform.isIOS && mode == modeAlarm) {
+      final scheduled = await SystemAlarm.scheduleTask(
+        uid: task.uid,
+        at: when,
+        label: task.summary.isEmpty ? '待办提醒' : task.summary,
+      );
+      if (scheduled) return;
+    }
     final fireAt = tz.TZDateTime.from(when, tz.local);
     final title = task.summary.isEmpty ? '待办提醒' : task.summary;
     final body = '截止于 ${TimeHelper.chineseDateTime(task.endTime)}';
@@ -628,6 +641,7 @@ class TaskReminder {
     try {
       await _plugin.cancel(_idOf(task.uid));
     } catch (_) {}
+    if (Platform.isIOS) await SystemAlarm.cancelTask(task.uid);
     await _schedule(task, _idOf(task.uid), _snoozed[task.uid]!);
   }
 
@@ -639,6 +653,7 @@ class TaskReminder {
     try {
       await _plugin.cancel(_idOf(task.uid));
     } catch (_) {}
+    if (Platform.isIOS) await SystemAlarm.cancelTask(task.uid);
   }
 
   /// 任务被删除时立刻撤销提醒。
@@ -649,5 +664,6 @@ class TaskReminder {
     try {
       await _plugin.cancel(_idOf(task.uid));
     } catch (_) {}
+    if (Platform.isIOS) await SystemAlarm.cancelTask(task.uid);
   }
 }
