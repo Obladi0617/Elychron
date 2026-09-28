@@ -63,6 +63,15 @@ class ShareReceiver {
     }
   }
 
+  /// 原生 iOS 冷启动会一次返回多个分享批次；每批必须单独让用户处理。
+  static List<List<SharedItem>> batches(List<SharedItem> items) {
+    final groups = <String?, List<SharedItem>>{};
+    for (final item in items) {
+      groups.putIfAbsent(item.batch, () => <SharedItem>[]).add(item);
+    }
+    return groups.values.toList();
+  }
+
   static List<SharedItem> _parse(List<dynamic>? raw) {
     if (raw == null) return const <SharedItem>[];
     final result = <SharedItem>[];

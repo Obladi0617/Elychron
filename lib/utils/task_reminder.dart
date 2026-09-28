@@ -71,6 +71,21 @@ class TaskReminder {
               showsUserInterface: false, cancelNotification: true),
         ];
 
+  static const String _iosNotificationCategory = 'elychron_task_reminder';
+  static const String _iosAlarmFallbackCategory = 'elychron_alarm_fallback';
+  static final List<DarwinNotificationAction> _iosActions = [
+    DarwinNotificationAction.plain(
+      'snooze',
+      '延迟 10 分钟',
+      options: {DarwinNotificationActionOption.foreground},
+    ),
+    DarwinNotificationAction.plain(
+      'dismiss',
+      '划掉',
+      options: {DarwinNotificationActionOption.foreground},
+    ),
+  ];
+
   /// 划掉这个按钮为什么要分模式设置 `showsUserInterface`：
   ///
   /// `showsUserInterface: false` 的按钮**不会把 App 拉到前台**，响应只会送到
@@ -123,7 +138,11 @@ class TaskReminder {
 
   static NotificationDetails get _details => NotificationDetails(
         android: mode == modeAlarm ? _alarmDetails : _notificationDetails,
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(
+          categoryIdentifier: mode == modeAlarm
+              ? _iosAlarmFallbackCategory
+              : _iosNotificationCategory,
+        ),
         macOS: const DarwinNotificationDetails(),
       );
 
@@ -140,10 +159,21 @@ class TaskReminder {
       // 时区库异常时退回 UTC，避免启动崩溃。
     }
 
-    const initializationSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(),
-      macOS: DarwinInitializationSettings(),
+    final initializationSettings = InitializationSettings(
+      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        notificationCategories: [
+          DarwinNotificationCategory(
+            _iosNotificationCategory,
+            actions: _iosActions,
+          ),
+          DarwinNotificationCategory(
+            _iosAlarmFallbackCategory,
+            actions: _iosActions,
+          ),
+        ],
+      ),
+      macOS: const DarwinInitializationSettings(),
     );
     try {
       await _plugin.initialize(

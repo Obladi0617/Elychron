@@ -55,10 +55,31 @@ final class ShareViewController: UIViewController {
     }
 
     private func extract(_ provider: NSItemProvider, batch: String) async -> [String: String] {
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            guard let value = await loadItem(provider, type: UTType.fileURL.identifier) else {
+                return ["name": provider.suggestedName ?? "文件", "error": "unreadable"]
+            }
+            if let url = value as? URL {
+                return copyFile(url, provider: provider, batch: batch)
+            }
+            if let text = value as? String, let url = URL(string: text), url.isFileURL {
+                return copyFile(url, provider: provider, batch: batch)
+            }
+            return ["name": provider.suggestedName ?? "文件", "error": "unreadable"]
+        }
         if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
            let value = await loadItem(provider, type: UTType.url.identifier) {
-            if let url = value as? URL { return ["text": url.absoluteString] }
-            if let text = value as? String { return ["text": text] }
+            if let url = value as? URL {
+                return url.isFileURL
+                    ? copyFile(url, provider: provider, batch: batch)
+                    : ["text": url.absoluteString]
+            }
+            if let text = value as? String {
+                if let url = URL(string: text), url.isFileURL {
+                    return copyFile(url, provider: provider, batch: batch)
+                }
+                return ["text": text]
+            }
         }
         if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
            let value = await loadItem(provider, type: UTType.plainText.identifier) {
@@ -88,6 +109,20 @@ final class ShareViewController: UIViewController {
                     ])
                 }
             }
+        }
+    }
+
+    private func copyFile(_ source: URL, provider: NSItemProvider, batch: String) -> [String: String] {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        do {
+            let copied = try ShareInbox.copyAttachment(from: source, batch: batch)
+            let name = provider.suggestedName ?? source.lastPathComponent
+            let mime = UTType(filenameExtension: source.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            return ["path": copied.path, "name": name, "mime": mime]
+        } catch {
+            return ["name": provider.suggestedName ?? "文件", "error": "unreadable"]
         }
     }
 
