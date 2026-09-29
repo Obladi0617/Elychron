@@ -1,4 +1,5 @@
 import 'package:celechron/design/app_accent.dart';
+import 'package:celechron/design/adaptive_form_body.dart';
 import 'package:celechron/design/page_background.dart';
 import 'dart:async';
 
@@ -1781,7 +1782,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
               ),
             ),
           ],
-        ),
+        ).asAdaptiveFormBody(),
       ),
     );
   }
