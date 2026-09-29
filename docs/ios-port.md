@@ -10,7 +10,7 @@
 | Manual native alarm | iOS 26+ creates an independent one-time Elychron alarm. It is not added to Apple Clock and does not follow task edits. |
 | Background scholarly refresh | Existing BGAppRefresh/Workmanager integration; iOS decides whether and when to run it. The 15-minute interval is only an earliest request. |
 | Shortcuts quick add | Use Shortcuts’ “Open URLs” action with `elychron://todo/create`. The simulator recognizes the URL and displays Elychron as its target; opening the task editor still needs an unlocked simulator confirmation. |
-| iPad layout | At iOS window widths of 900 logical pixels or more, the five main sections move to a sidebar and the page content is centered within 920 pixels. Narrow windows retain bottom tabs. Shared choice/report sheets become centered cards up to 560 pixels wide and stay above the keyboard. Task create/edit forms are centered within 720 pixels. |
+| iPad layout | At iOS window widths of 900 logical pixels or more, the five main sections move to a sidebar and the page content is centered within 920 pixels. Narrow windows retain bottom tabs. Shared choice/report sheets become centered cards up to 560 pixels wide; sheet actions stay above the keyboard even when a window narrows. Task create/edit forms are centered within 720 pixels. |
 
 ## Build and signing
 
@@ -26,7 +26,7 @@ The iOS native implementations live in `ios/ShareSupport`, `ios/ShareExtension`,
 
 ## Verification
 
-- `flutter test`: 681 tests pass, including iPad navigation state, sheet sizing/scrolling/keyboard avoidance, and task form resizing.
+- `flutter test`: 682 tests pass, including iPad navigation state, sheet sizing/scrolling/keyboard avoidance across window resizing, and task form resizing.
 - `swiftc -module-cache-path /private/tmp/elychron-swift-module-cache ios/ShareSupport/ShareInbox.swift test_native/share_inbox/main.swift -o /private/tmp/elychron-share-inbox-test && /private/tmp/elychron-share-inbox-test`: passes.
 - iOS 27 simulator build and launch: passes. The simulator build was unsigned, so App Group delivery and AlarmKit authorization were not exercised end to end.
 - `elychron://todo/create`: recognized by iOS in the simulator; first-open confirmation was not tapped because the remote Mac is locked.

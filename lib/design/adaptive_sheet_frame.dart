@@ -10,15 +10,21 @@ class AdaptiveSheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     if (!AdaptiveWindow.isWideIos(
         MediaQuery.sizeOf(context).width, defaultTargetPlatform)) {
+      if (defaultTargetPlatform == TargetPlatform.iOS && keyboardInset > 0) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: child,
+        );
+      }
       return child;
     }
 
     final mediaQuery = MediaQuery.of(context);
     final topInset = mediaQuery.padding.top + 16;
-    final bottomInset =
-        mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom + 16;
+    final bottomInset = keyboardInset + mediaQuery.padding.bottom + 16;
     return LayoutBuilder(builder: (context, constraints) {
       return Padding(
         padding: EdgeInsets.fromLTRB(16, topInset, 16, bottomInset),

@@ -86,4 +86,22 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
   });
+
+  testWidgets('sheet cancel stays reachable when keyboard stays open on resize',
+      (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(tester.view.reset);
+    try {
+      await showSheet(tester, width: 1100, keyboardInset: 320);
+      tester.view.physicalSize = const Size(700, 800);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.text('取消')).bottom, lessThanOrEqualTo(480));
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('取消'), findsNothing);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }
