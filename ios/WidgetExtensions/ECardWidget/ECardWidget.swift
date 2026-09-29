@@ -24,9 +24,9 @@ struct ECardWidgetProvider: TimelineProvider {
     
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
     #if DEBUG
-        let accessGroup = "group.top.celechron.celechron.debug"
+        let accessGroup = "group.com.obladi0617.elychron.debug"
     #else
-        let accessGroup = "group.top.celechron.celechron"
+        let accessGroup = "group.com.obladi0617.elychron"
     #endif
         let keychainQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -149,7 +149,7 @@ struct ECardWidgetView: View {
                 Spacer()
                 Image(systemName: "qrcode").foregroundColor(/*@START_MENU_TOKEN@*/.blue/*@END_MENU_TOKEN@*/).font(/*@START_MENU_TOKEN@*/.title/*@END_MENU_TOKEN@*/)
             }
-        }.widgetURL(URL(string: "celechron://ecardpaypage"))
+        }.widgetURL(URL(string: "elychron://ecardpaypage"))
     }
 }
 
