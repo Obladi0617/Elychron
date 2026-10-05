@@ -15,9 +15,11 @@
 ## Build and signing
 
 - Minimum iOS version: 15.0. Use Xcode 27 and the repository's Flutter SDK/dependencies.
-- App IDs: `com.obladi0617.elychron` (Release) and `com.obladi0617.elychron.debug` (Debug), with corresponding widget and share extensions. App Groups are `group.com.obladi0617.elychron` and `group.com.obladi0617.elychron.debug`.
+- App IDs: `com.obladi0617.elychron` (Release) and `com.obladi0617.elychron.debug` (Debug/Profile), with corresponding widget and share extensions. App Groups are `group.com.obladi0617.elychron` and `group.com.obladi0617.elychron.debug`. Flutter Keychain options use the same groups, including the debug group in Profile builds.
 - Xcode signing is Automatic. In Xcode, sign in to your Apple account and select the same team for Runner, WidgetExtensions, and ShareExtension. Keep App Groups enabled for all three targets. The original author's team and provisioning profile were removed from this fork.
-- For simulator: `flutter build ios --simulator --no-codesign`. For a compile-only device build: `flutter build ios --release --no-codesign`. The latter produces an **unsigned** `build/ios/iphoneos/Runner.app`; it is not an installable IPA.
+- For a compile-only simulator check: `flutter build ios --simulator --no-codesign`. This package can launch, but does not include the simulator entitlements needed for shared Keychain access; login can fail with `-34018` before any network request.
+- For simulator login and App Group runtime checks, build/run Runner from `ios/Runner.xcworkspace` in Xcode. Command-line builds must enable signing (`CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES`) so Xcode embeds simulator entitlements. This uses an ad hoc simulator signature; it does not produce a device provisioning profile or signed IPA.
+- For a compile-only device build: `flutter build ios --release --no-codesign`. This produces an **unsigned** `build/ios/iphoneos/Runner.app`; it is not an installable IPA.
 - A signed IPA can be exported only after Xcode has a valid team, development certificate, provisioning profile, and target device. A free Personal Team can test on its own registered device for a limited period; broad distribution needs the paid Apple Developer Program. Never share an Apple password or verification code in chat.
 
 ## Merge strategy
@@ -26,10 +28,13 @@ The iOS native implementations live in `ios/ShareSupport`, `ios/ShareExtension`,
 
 ## Verification
 
-- `flutter test`: 682 tests pass, including iPad navigation state, sheet sizing/scrolling/keyboard avoidance across window resizing, and task form resizing.
+- Login fix (2026-10-05): 688 Flutter tests pass, with zero static-analysis errors (existing warnings/info remain). The user confirmed real-account login on the fork's iPhone 18 Pro simulator; real-account login on the merged upstream version has not been repeated.
+- Keychain permission checks: Debug, Profile, and Release entitlement configurations each successfully write, read, and delete a synthetic record on iPhone 18 Pro and iPad Pro simulators. The tests use this branch's `group.com.obladi0617.elychron` groups and do not access user credentials. Device provisioning and signed IPA login still need device acceptance.
+- `test_native/keychain_smoke/main.swift` tests OS Keychain permissions without user credentials. Compile for `arm64-apple-ios15.0-simulator`, linking `Security` and embedding the generated simulator entitlement plist with `-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker <Runner.app-Simulated.xcent>`. Run with `xcrun simctl spawn <device-id> <binary> group.com.obladi0617.elychron.debug`; all status codes must be `0` and `matches=true`.
+- The Flutter suite includes iPad navigation state, sheet sizing/scrolling/keyboard avoidance across window resizing, task form resizing, and CAS rejection-message redaction tests.
 - `swiftc -module-cache-path /private/tmp/elychron-swift-module-cache ios/ShareSupport/ShareInbox.swift test_native/share_inbox/main.swift -o /private/tmp/elychron-share-inbox-test && /private/tmp/elychron-share-inbox-test`: passes.
-- iOS 27 simulator build and launch: passes. The simulator build was unsigned, so App Group delivery and AlarmKit authorization were not exercised end to end.
-- `elychron://todo/create`: recognized by iOS in the simulator; first-open confirmation was not tapped because the remote Mac is locked.
-- iOS device Release build without code signing: passes.
+- Earlier port checks: iOS 27 simulator build and launch passed. Share delivery and AlarmKit authorization were not exercised end to end.
+- `elychron://todo/create`: recognized by iOS in an earlier simulator check; the task-editor flow has not been fully accepted.
+- Current fork Profile and Release device builds without code signing: pass (2026-10-05). Debug simulator login was verified with simulator signing enabled.
 - iOS 27 simulator build after iPad changes: passes. The unsigned app installed and launched on iPad mini (A17 Pro), iPad Pro 13-inch (M5), and iPhone 18 Pro. An iPad Pro portrait screenshot shows the five-section sidebar and centered content.
-- Interactive checks of all five tabs, task create/edit, sheet actions, landscape rotation, and hardware keyboard remain unverified: the remote Mac is locked, so the simulator's first-run notification/URL prompts cannot be dismissed through the available UI control. Widget tests cover the responsive layouts and keyboard inset, but do not replace those device interactions.
+- Interactive checks of all five tabs, task create/edit, sheet actions, landscape rotation, and hardware keyboard remain unverified. Widget tests cover responsive layouts and keyboard inset, but do not replace device interactions.
