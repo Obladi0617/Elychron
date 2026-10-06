@@ -1,5 +1,6 @@
 import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/mod/database_mod.dart';
+import 'package:celechron/mod/ios_task_reminder_preferences.dart';
 import 'package:celechron/model/task.dart';
 import 'package:celechron/utils/task_alarm_center.dart';
 import 'package:celechron/utils/task_reminder.dart';
@@ -21,6 +22,8 @@ class TaskAlarmCoordinator {
   /// 曾经这里有个 `_fired` 集合 + `if (current == null) _fired.clear()`，
   /// 结果是**用户一关掉弹窗就又把记录清空 → 同一分钟内反复弹**（真实反馈 bug）。
   static void tick(List<Task> taskList) {
+    // AlarmKit owns iOS alerts, including while the app is in the foreground.
+    if (IosTaskReminderPreferences.isIOS) return;
     if (TaskReminder.mode != TaskReminder.modeAlarm) return;
     if (TaskAlarmCenter.current.value != null) return;
 
