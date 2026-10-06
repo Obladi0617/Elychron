@@ -14,6 +14,7 @@ class DesktopNavRail extends StatelessWidget {
     required this.index,
     required this.onSelect,
     this.width = 208,
+    this.showDropHint = true,
   });
 
   /// 当前选中的序号
@@ -23,6 +24,7 @@ class DesktopNavRail extends StatelessWidget {
   final ValueChanged<int> onSelect;
 
   final double width;
+  final bool showDropHint;
 
   /// 导航项：与手机端底部标签一一对应（日程 / 待办 / 专注 / 学业 / 设置）
   static const List<DesktopNavItem> items = <DesktopNavItem>[
@@ -60,15 +62,19 @@ class DesktopNavRail extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
               child: Row(
                 children: <Widget>[
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(7),
+                  // ===== 左上角这个才是"爱莉"（用户 2026-09-30 明确指出来）=====
+                  //
+                  // 就是 App 图标本身（assets/logo.png，粉色圆底头像）。
+                  // 原来是"爱莉粉方块 + 白色时钟字形"，那只是个占位标。
+                  // 裁成圆角（原图是圆底，方形摆上去会露四角）。
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.asset(
+                      'assets/logo.png',
+                      width: 26,
+                      height: 26,
+                      fit: BoxFit.cover,
                     ),
-                    child: const Icon(CupertinoIcons.time_solid,
-                        size: 15, color: CupertinoColors.white),
                   ),
                   const SizedBox(width: 10),
                   // Expanded + 省略号：字体一换（微软雅黑比默认字体宽一点点）
@@ -88,13 +94,14 @@ class DesktopNavRail extends StatelessWidget {
             for (var i = 0; i < items.length; i++)
               _tile(context, i, labelColor, accent),
             const Spacer(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: Text(
-                '把文件拖进窗口即可添加为待办附件',
-                style: TextStyle(fontSize: 11, color: labelColor),
+            if (showDropHint)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Text(
+                  '把文件拖进窗口即可添加为待办附件',
+                  style: TextStyle(fontSize: 11, color: labelColor),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -118,7 +125,18 @@ class DesktopNavRail extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(item.icon, size: 19, color: selected ? accent : labelColor),
+            // 导航项还是系统字形（2026-09-30 更正）。
+            //
+            // 用户的原话：「我让你给电脑版的导航栏图标换成爱莉，不是说把每一个
+            // "日程""待办"等等条目前面加上，删掉。我的意思是最左上角那个大字
+            // Elychron 左边的图标需要换掉」——
+            // 所以爱莉只出现在左上角那个 App 标上（build 里那个 Image.asset），
+            // 每一项这里回到各自的功能图标，一眼能分清是哪一页。
+            Icon(
+              item.icon,
+              size: 19,
+              color: selected ? accent : labelColor,
+            ),
             const SizedBox(width: 12),
             Text(
               item.label,

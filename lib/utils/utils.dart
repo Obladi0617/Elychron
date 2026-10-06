@@ -24,12 +24,12 @@ String toStringHumanReadable(DateTime dateTime) {
   return str;
 }
 
-const secureStorageIOSOptions = kDebugMode
+const secureStorageIOSOptions = !kReleaseMode
     ? IOSOptions(
         accessibility: KeychainAccessibility.first_unlock,
         accountName: 'Celechron',
-        groupId: 'group.top.celechron.celechron.debug')
+        groupId: 'group.com.obladi0617.elychron.debug')
     : IOSOptions(
         accessibility: KeychainAccessibility.first_unlock,
         accountName: 'Celechron',
-        groupId: 'group.top.celechron.celechron');
+        groupId: 'group.com.obladi0617.elychron');

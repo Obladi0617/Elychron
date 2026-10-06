@@ -1,4 +1,5 @@
 import 'package:celechron/design/app_accent.dart';
+import 'package:celechron/design/adaptive_form_body.dart';
 import 'package:celechron/design/page_background.dart';
 import 'package:celechron/design/date_picker_sheet.dart';
 import 'package:celechron/design/repeat_sheet.dart';
@@ -7,6 +8,8 @@ import 'package:celechron/design/tag_picker.dart';
 import 'package:celechron/design/task_priority_color.dart';
 import 'package:celechron/design/task_kind_selector.dart';
 import 'package:celechron/design/task_time_panel.dart';
+import 'package:celechron/design/ios_reminder_mode_control.dart';
+import 'package:celechron/mod/ios_task_reminder_preferences.dart';
 import 'package:celechron/model/task.dart';
 import 'package:celechron/utils/attachment_helper.dart';
 import 'package:celechron/utils/time_helper.dart';
@@ -16,6 +19,8 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:celechron/mod/course_mount_store.dart';
 import 'package:celechron/mod/ai/ai_compose_sheet.dart';
 import 'package:celechron/design/dingtalk_sheet.dart';
+import 'package:celechron/design/context_menu.dart';
+import 'package:celechron/design/dingtalk_menu.dart';
 
 /// 钉钉风格的新建待办页。
 ///
@@ -41,6 +46,8 @@ class TaskCreatePage extends StatefulWidget {
 
 class _TaskCreatePageState extends State<TaskCreatePage> {
   late Task now;
+  int _iosReminderMode = 0;
+  bool _saving = false;
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
@@ -49,6 +56,10 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
   void initState() {
     super.initState();
     now = widget.initial.copyWith();
+    if (IosTaskReminderPreferences.isIOS && widget.heightFactor == null) {
+      _iosReminderMode =
+          IosTaskReminderPreferences.modeFor(now.uid, fromUid: now.fromUid);
+    }
 
     // 把传入的内容回填到输入框（分享进来 / 编辑子待办时会预填）
     _titleController.text = now.summary;
@@ -97,8 +108,9 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
 
   // ------------------------------------------------------------------ 保存
 
-  void _saveAndExit() {
-    if (!_canCreate) return;
+  Future<void> _saveAndExit() async {
+    if (!_canCreate || _saving) return;
+    setState(() => _saving = true);
 
     now.summary = _titleController.text.trim();
     now.description = _descriptionController.text;
@@ -106,6 +118,18 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
     now.createdAt ??= DateTime.now();
     now.updatedAt = DateTime.now();
     now.forceRefreshStatus();
+    if (IosTaskReminderPreferences.isIOS && widget.heightFactor == null) {
+      try {
+        await IosTaskReminderPreferences.save(now.uid, _iosReminderMode);
+      } catch (_) {
+        if (mounted) {
+          setState(() => _saving = false);
+          _alert('提醒方式未能保存，请重试');
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
     Navigator.of(context).pop(now);
   }
 
@@ -172,6 +196,10 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
     await showTaskTimePanel(
       context,
       task: now,
+      reminderMode: _iosReminderMode,
+      onReminderModeChanged: widget.heightFactor == null
+          ? (mode) => setState(() => _iosReminderMode = mode)
+          : null,
       onChanged: () {
         if (mounted) setState(() {});
       },
@@ -290,6 +318,85 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
     } catch (e) {
       if (mounted) _alert('选择文件失败：$e');
     }
+  }
+
+  /// 长按（手机）/ 右键（电脑）：重命名 / 打开 / 删除
+  ///
+  /// 与编辑页（task_edit_page）同一套，课程资料那边更早就有 ——
+  /// 用户 2026-09-21 要求待办附件也能长按重命名。
+  Future<void> _attachmentActions(TaskAttachment attachment) async {
+    await showDingTalkMenu(
+      context,
+      title: attachment.name,
+      items: [
+        DingTalkMenuItem(
+          label: '重命名',
+          icon: CupertinoIcons.pencil,
+          onTap: () => _renameAttachment(attachment),
+        ),
+        DingTalkMenuItem(
+          label: '打开',
+          icon: CupertinoIcons.arrow_up_right_square,
+          onTap: () => _openAttachment(attachment),
+        ),
+        DingTalkMenuItem(
+          label: '删除',
+          icon: CupertinoIcons.trash,
+          destructive: true,
+          onTap: () => setState(() => now.attachments.remove(attachment)),
+        ),
+      ],
+    );
+  }
+
+  /// 只改显示名（TaskAttachment.name），不动磁盘文件名 —— 与课程/编辑页同一口径
+  Future<void> _renameAttachment(TaskAttachment attachment) async {
+    final dot = attachment.name.lastIndexOf('.');
+    final extension = dot > 0 ? attachment.name.substring(dot) : '';
+    final base = dot > 0 ? attachment.name.substring(0, dot) : attachment.name;
+    final textController = TextEditingController(text: base);
+    final name = await showCupertinoDialog<String>(
+      context: context,
+      builder: (BuildContext context) => CupertinoAlertDialog(
+        title: const Text('重命名'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CupertinoTextField(
+                controller: textController,
+                autofocus: true,
+                placeholder: '新名字',
+                onSubmitted: (String value) => Navigator.of(context).pop(value),
+              ),
+              if (extension.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('后缀 $extension 会保留',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('取消'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('好'),
+            onPressed: () => Navigator.of(context).pop(textController.text),
+          ),
+        ],
+      ),
+    );
+    if (name == null) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == base) return;
+    setState(() => attachment.name = trimmed + extension);
   }
 
   Future<void> _openAttachment(TaskAttachment attachment) async {
@@ -521,8 +628,7 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
     final page = CupertinoPageScaffold(
       backgroundColor: pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoDynamicColor.resolve(
-            CupertinoColors.systemGroupedBackground, context),
+        backgroundColor: pageBackground(context),
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _exitWithoutSave,
@@ -705,6 +811,14 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
                       style: TextStyle(fontSize: 13, color: labelColor),
                     ),
                   ),
+                  if (IosTaskReminderPreferences.isIOS &&
+                      widget.heightFactor == null &&
+                      now.schedulesReminder)
+                    IosReminderModeControl(
+                      mode: _iosReminderMode,
+                      onChanged: (mode) =>
+                          setState(() => _iosReminderMode = mode),
+                    ),
                 ],
               ),
 
@@ -894,43 +1008,51 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
               children: [
                 ...now.attachments.map((attachment) {
                   final thumbnail = attachmentThumbnail(attachment.path);
-                  return Column(
-                    children: [
-                      _iconRow(
-                        icon:
-                            thumbnail == null ? CupertinoIcons.paperclip : null,
-                        leading: thumbnail,
-                        onTap: () => _openAttachment(attachment),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                attachment.name,
-                                overflow: TextOverflow.ellipsis,
-                                style:
-                                    TextStyle(fontSize: 15, color: textColor),
+                  return contextMenuRegion(
+                    // 长按（手机）/ 右键（电脑）= 重命名 / 打开 / 删除
+                    // 用户 2026-09-21 要求："待办的附件也可以长按重命名（跟课程一样）" ——
+                    // 编辑页早就有这套（task_edit_page），新建页这次补上。
+                    onLongPress: () => _attachmentActions(attachment),
+                    child: Column(
+                      children: [
+                        _iconRow(
+                          icon: thumbnail == null
+                              ? CupertinoIcons.paperclip
+                              : null,
+                          leading: thumbnail,
+                          onTap: () => _openAttachment(attachment),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  attachment.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(fontSize: 15, color: textColor),
+                                ),
                               ),
-                            ),
-                            if (formatFileSize(attachment.size).isNotEmpty)
-                              Text(
-                                formatFileSize(attachment.size),
-                                style:
-                                    TextStyle(fontSize: 12, color: labelColor),
-                              ),
-                          ],
+                              if (formatFileSize(attachment.size).isNotEmpty)
+                                Text(
+                                  formatFileSize(attachment.size),
+                                  style: TextStyle(
+                                      fontSize: 12, color: labelColor),
+                                ),
+                            ],
+                          ),
+                          trailing: CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(32, 32),
+                            onPressed: () {
+                              setState(
+                                  () => now.attachments.remove(attachment));
+                            },
+                            child: Icon(CupertinoIcons.xmark,
+                                size: 16, color: labelColor),
+                          ),
                         ),
-                        trailing: CupertinoButton(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(32, 32),
-                          onPressed: () {
-                            setState(() => now.attachments.remove(attachment));
-                          },
-                          child: Icon(CupertinoIcons.xmark,
-                              size: 16, color: labelColor),
-                        ),
-                      ),
-                      _divider(),
-                    ],
+                        _divider(),
+                      ],
+                    ),
                   );
                 }),
                 _iconRow(
@@ -942,19 +1064,23 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
               ],
             ),
           ],
-        ),
+        ).asAdaptiveFormBody(),
       ),
     );
 
     // 子待办用：不占满屏幕，上方留出一条空隙，顶部圆角
-    if (widget.heightFactor == null) return page;
+    final protectedPage = PopScope(
+      canPop: !_saving,
+      child: AbsorbPointer(absorbing: _saving, child: page),
+    );
+    if (widget.heightFactor == null) return protectedPage;
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
         heightFactor: widget.heightFactor,
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-          child: page,
+          child: protectedPage,
         ),
       ),
     );
