@@ -1,8 +1,6 @@
-import 'package:celechron/design/alarm_reliability.dart';
 import 'package:celechron/design/context_menu.dart';
 import 'package:celechron/design/app_route.dart';
 import 'package:celechron/utils/platform_features.dart';
-import 'package:celechron/design/alarm_theme_picker.dart';
 import 'package:celechron/design/dingtalk_sheet.dart';
 import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/mod/database_mod.dart';
@@ -12,6 +10,10 @@ import 'package:celechron/platform/desktop_notify.dart';
 import 'package:celechron/mod/ai/ai_settings_page.dart';
 import 'package:celechron/mod/ai/deepseek.dart';
 import 'package:celechron/mod/lan_sync_page.dart';
+import 'package:celechron/mod/webdav_config.dart';
+import 'package:celechron/mod/webdav_settings_page.dart';
+import 'package:celechron/mod/webdav_sync_service.dart';
+import 'package:flutter/foundation.dart' show Listenable;
 import 'package:celechron/mod/settings_data_actions.dart';
 import 'package:celechron/page/focus/focus_stats_page.dart';
 import 'package:celechron/page/option/option_controller.dart';
@@ -22,6 +24,9 @@ import 'package:celechron/tutorial/tutorial_entry.dart';
 import 'package:celechron/tutorial/tutorial_registry.dart';
 import 'package:celechron/tutorial/tutorial_store.dart';
 import 'package:celechron/design/page_background.dart';
+import 'package:celechron/mod/campus_emergency_page.dart';
+import 'package:celechron/mod/library_settings_page.dart';
+import 'package:celechron/mod/pta_settings_page.dart';
 
 /// ============ 设置页里属于魔改的两个区块 ============
 ///
@@ -84,26 +89,15 @@ List<Widget> modReminderTiles(
   OptionController optionController,
 ) =>
     [
-      CupertinoListTile(
-        title: const Text('待办提醒方式'),
-        subtitle: const Text('通知：横幅弹出+响铃；闹钟：全屏响铃，可延迟或划掉'),
-        trailing: Obx(() => CupertinoSlidingSegmentedControl<int>(
-              children: const {
-                0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('通知')),
-                1: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('闹钟')),
-              },
-              groupValue: optionController.reminderMode.value,
-              onValueChanged: (value) {
-                if (value != null) {
-                  optionController.setReminderMode(value);
-                }
-              },
-            )),
-      ),
+      // ===== 2026-09-30：删掉「Elychron 自带闹钟」这个提醒方式 =====
+      //
+      // 用户原话：「手机端的闹钟功能始终不实用……我们删掉吧。注意只删掉 Elychron
+      // 自带的闹钟，不删掉"同步到系统闹钟"功能」。
+      //
+      // 自带闹钟 = 到点弹一个全屏响铃页（可延迟 / 划掉，还有配色与"可靠性"授权页）。
+      // 现在提醒方式固定为**通知**，那个选择器与它下面的两行设置一起下线；
+      // 「同步到系统闹钟」（把提醒写进系统时钟 App）在别处，一点没动。
+      //
       // ===== P1：默认提醒提前量 =====
       // 活动锚开始、截止锚截止，各自再提前这么多；提醒型就是那一刻。
       const _ReminderLeadTile(),
@@ -182,25 +176,6 @@ List<Widget> modReminderTiles(
             );
           });
         }),
-      if (!PlatformFeatures.isDesktop) ...<Widget>[
-        CupertinoListTile(
-          title: const Text('闹钟可靠性'),
-          subtitle: Text(PlatformFeatures.isAndroid
-              ? '全屏闹钟授权、锁屏弹出、电池白名单'
-              : 'iPhone 原生闹钟与通知权限'),
-          trailing: const BackChervonRow(),
-          onTap: () => showAlarmReliabilityDialog(context),
-        ),
-        CupertinoListTile(
-          title: const Text('闹钟配色'),
-          subtitle: const Text('闹钟页面四种配色'),
-          trailing: const BackChervonRow(),
-          onTap: () => showAlarmThemePicker(
-            context,
-            onChanged: () {},
-          ),
-        ),
-      ],
     ];
 
 /// 默认提醒提前量这一行：点开选一个值，存进 optionsBox。
@@ -271,7 +246,13 @@ Widget modDataSection(
             header: Container(
                 padding: const EdgeInsets.only(left: 16),
                 child: Text('数据', style: headerStyle)),
-            children: <CupertinoListTile>[
+            children: <Widget>[
+          // ===== 全平台同步（WebDAV）：不在同一 Wi-Fi 也能同步 =====
+          //
+          // 局域网同步要求两台设备同时在同一个 Wi-Fi 下，而且手机息屏后经常连不上；
+          // 用户要的是"手机改了，电脑上就有"，那必须走一个两边都能访问的中转，
+          // 而 WebDAV 是唯一一个不用我们自己出服务器的办法（坚果云、NAS、Nextcloud 都行）。
+          const _WebDavSyncTile(),
           // 局域网同步（多端协同）尚未完工，公开发布这版先不开放入口。
           // 代码与网页面板都还在 `lib/mod/lan_*.dart` 里，改回 true 即可恢复。
           if (kLanSyncEnabled) ...[
@@ -566,3 +547,114 @@ Widget modAiSection(
         ),
       ),
     );
+
+/// ===== 全平台同步的入口行（设置 → 数据）=====
+///
+/// 副标题要能一眼看出"现在到底同没同步、上次什么时候"，
+/// 因为用户不会为了确认这件事专门点进去。
+class _WebDavSyncTile extends StatefulWidget {
+  const _WebDavSyncTile();
+
+  @override
+  State<_WebDavSyncTile> createState() => _WebDavSyncTileState();
+}
+
+class _WebDavSyncTileState extends State<_WebDavSyncTile> {
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (!WebDavConfig.loaded) await WebDavConfig.load();
+    if (!mounted) return;
+    setState(() {});
+    // 已经配好的话，进设置页就把自动同步挂上（不必等用户再点一次开关）
+    if (WebDavConfig.enabled && WebDavConfig.isConfigured) {
+      WebDavSyncService.instance.startAutoSync();
+    }
+  }
+
+  String get _subtitle {
+    if (!WebDavConfig.isConfigured) return '手机 / 电脑之间走网盘同步，点这里三步设置好';
+    final name =
+        WebDavConfig.providerName.isEmpty ? '网盘' : WebDavConfig.providerName;
+    if (!WebDavConfig.enabled) return name + ' · 已暂停，点这里继续';
+    return name + ' · ' + WebDavSyncService.describeLastSync();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[
+        WebDavConfig.revision,
+        WebDavSyncService.revision,
+      ]),
+      builder: (BuildContext context, Widget? _) => CupertinoListTile(
+        title: const Text('全平台同步'),
+        subtitle: Text(
+          _subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const BackChervonRow(),
+        onTap: () async {
+          if (!WebDavConfig.loaded) await WebDavConfig.load();
+          if (!context.mounted) return;
+          await Navigator.of(context, rootNavigator: true).push(
+            appPageRoute<void>(
+              builder: (BuildContext context) => const WebDavSettingsPage(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// ===== 校园服务（2026-09-30）=====
+///
+/// 这类东西的共同点：**偶尔用一次，但用的时候要快**。所以它不进主界面、
+/// 也不该要求联网 —— 紧急电话那份数据就是随包的（见 docs/CAMPUS_SERVICES_PLAN.md）。
+Widget modCampusSection(
+  BuildContext context, {
+  required TextStyle? headerStyle,
+  required EdgeInsetsGeometry margin,
+}) =>
+    SliverToBoxAdapter(
+        child: CupertinoListSection.insetGrouped(
+            backgroundColor: pageBackground(context),
+            additionalDividerMargin: 2,
+            margin: margin,
+            header: Container(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text('校园服务', style: headerStyle)),
+            children: <Widget>[
+          CupertinoListTile(
+            title: const Text('紧急电话'),
+            subtitle: const Text('校区报警 / 急诊 / 各单位电话（随包快照，离线可用）'),
+            trailing: const BackChervonRow(),
+            onTap: () => Navigator.of(context, rootNavigator: true).push(
+              appPageRoute<void>(
+                builder: (BuildContext context) =>
+                    const CampusEmergencyPage(),
+              ),
+            ),
+          ),
+          // ===== 2026-10-01：PTA / 图书馆预约挪去"教务"那个分组 =====
+          //
+          // 用户明确要求："把「PTA」和「图书馆预约」两行移到「登录」那一类下面，
+          // 也就是和教务同一类"，并且**不许**为它们新开一个灰色分组标题。
+          // 所以这里不再放它们，改由 option_view.dart 的教务分组挂 modAccountTiles()。
+        ]));
+
+/// "教务"那个分组里追加的两行（PTA / 图书馆预约）。
+///
+/// 它们的共同点：用的都是**教务那份 ZJU 账号**（PTA 走 PTASession、图书馆走
+/// 统一身份认证），登录态和教务同生共死，所以摆在同一类里最自然。
+/// 用户拍板：不加灰色小标题，直接并进已有分组。
+List<Widget> modAccountTiles(BuildContext context) => <Widget>[
+      const PtaHomeworkTile(),
+      const LibraryReservationTile(),
+    ];

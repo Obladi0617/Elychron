@@ -16,6 +16,7 @@ import 'package:celechron/design/tag_picker.dart';
 import 'package:celechron/design/task_priority_color.dart';
 import 'package:celechron/design/task_kind_selector.dart';
 import 'package:celechron/mod/ai/ai_subtasks_ui.dart';
+import 'package:celechron/mod/homework_tasks.dart';
 import 'package:celechron/page/focus/focus_entry.dart';
 import 'package:celechron/model/focus_engine.dart';
 import 'package:celechron/model/task.dart';
@@ -162,6 +163,8 @@ class _TaskEditPageState extends State<TaskEditPage> {
   }
 
   void removeAndExit() {
+    // 自动生成的作业删掉之后别在下次刷新时长回来（见 mod/homework_tasks.dart）
+    dismissHomeworkFor(now);
     now.summary = _titleController.text;
     now.description = _descriptionController.text;
     now.location = _locationController.text;
@@ -1135,8 +1138,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
     final page = CupertinoPageScaffold(
       backgroundColor: pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoDynamicColor.resolve(
-            CupertinoColors.systemGroupedBackground, context),
+        backgroundColor: pageBackground(context),
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: exitWithoutSave,

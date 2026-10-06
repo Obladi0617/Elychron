@@ -9,6 +9,7 @@ import 'package:celechron/mod/course_mount_store.dart';
 import 'package:celechron/mod/database_mod.dart';
 import 'package:celechron/mod/focus_runtime.dart';
 import 'package:celechron/mod/focus_suspend.dart';
+import 'package:celechron/mod/focus_anchor.dart';
 import 'package:celechron/model/focus_engine.dart';
 import 'package:celechron/model/focus_session.dart';
 import 'package:celechron/model/scholar.dart';
@@ -35,16 +36,48 @@ class FocusPage extends StatefulWidget {
   /// 专注首页会给出继续入口，点它就把它传进来，原样接着做。
   final SuspendedFocus? resume;
 
-  const FocusPage({super.key, this.task, this.freeLabel, this.resume});
+  /// 接回来之后**不等用户点「继续」**，直接接着跑（2026-09-30）。
+  ///
+  /// 用户的要求：「杀后台回来……确认现在应该处于什么状态后**直接静默继续**
+  /// （这也就意味着开屏会直接进入专注界面）」。
+  ///
+  /// 注意与"暂停后离开"区分：那种 resume 要停在中段等用户点继续（用户选的 (a)），
+  /// 所以默认 false，只有 `autoResumeInterruptedFocus` 传 true。
+  final bool autoContinue;
+
+  const FocusPage({
+    super.key,
+    this.task,
+    this.freeLabel,
+    this.resume,
+    this.autoContinue = false,
+  });
+
+  /// 专注页现在是不是开着（2026-09-30）。
+  ///
+  /// 用途：被系统冻结/杀掉之后再回来时，`autoResumeInterruptedFocus` 会想"接回专注"；
+  /// 但用户本来就停在专注页上的话，再 push 一页就叠成两层了。
+  static bool isOpen = false;
 
   @override
   State<FocusPage> createState() => _FocusPageState();
 }
 
 class _FocusPageState extends State<FocusPage> {
+
   late final FocusEngine _engine;
   late final FocusSession _session;
   Timer? _ticker;
+
+  /// ===== 专注锚点（2026-09-21 用户要求）=====
+  ///
+  /// 用户原话：「干脆不在过程中计数了，直接算起止时间 + 增设一个状态变量
+  /// （中断中，进行中，休息中），这样就算后台被杀掉也能保证时间计算准确」。
+  ///
+  /// 这里让锚点当**唯一权威**：每次 _flush（10 秒一次）与每次状态变化都把
+  /// 「此刻的 phase + 累计」写进锚点；结算时以锚点的数为准
+  /// （见 _settle：它会先再锚一次，避免把"App 已死的那段"算进来）。
+  FocusAnchor? _anchor;
   int _ticks = 0;
   FocusPhase _lastPhase = FocusPhase.idle;
 
@@ -142,7 +175,15 @@ class _FocusPageState extends State<FocusPage> {
         ? null
         : courseNameOf(attributedId);
 
+    // 标记"专注页开着"，给"杀后台回来自动接回"让路
+    FocusPage.isOpen = true;
+    // 杀后台被接回来的这次：不问用户，直接接着跑
+    if (widget.autoContinue && _engine.isPaused) {
+      _engine.resume(DateTime.now());
+      FocusRuntime.set(FocusRunState.running);
+    }
     _lastPhase = _engine.phase;
+    _syncAnchor(); // 开局就落一次锚点
     // 一开始就把该休息了排进系统（锁屏也响）
     _syncRestNotice();
 
@@ -203,6 +244,7 @@ class _FocusPageState extends State<FocusPage> {
     // 离开页面就把还没到点的该休息了撤掉，别让它半夜响
     TaskReminder.cancelFocusRestNotice();
     // 还原免打扰（只还原我们改过的；用户自己开着的话不动）
+    FocusPage.isOpen = false;
     DoNotDisturb.restore();
     super.dispose();
   }
@@ -237,6 +279,7 @@ class _FocusPageState extends State<FocusPage> {
     // 段切换（工作→休息 / 休息→工作）时同步该休息了的系统排程
     if (_engine.phase != _lastPhase) {
       _lastPhase = _engine.phase;
+      _syncAnchor(); // 状态变了（工作↔休息）立刻落锚点
       _syncRestNotice();
       // ===== MOD: 休息期间要把免打扰**关掉** =====
       //
@@ -258,7 +301,11 @@ class _FocusPageState extends State<FocusPage> {
     }
 
     // 每 10 秒落一次库：App 被系统杀掉时最多损失 10 秒
-    if (_ticks % 10 == 0) _flush();
+    if (_ticks % 10 == 0) {
+      _flush();
+      // 心跳：每 10 秒把锚点落一次（被杀掉时最多只差这一次心跳）
+      _syncAnchor();
+    }
 
     setState(() {});
   }
@@ -301,9 +348,50 @@ class _FocusPageState extends State<FocusPage> {
     _db?.saveFocusSession(_session);
   }
 
+  /// 把"此刻的事实"写进锚点：状态 + 起点 + 累计（纯推算，不靠计时器累加）
+  void _syncAnchor({bool clear = false}) {
+    if (clear) {
+      _anchor = null;
+      FocusAnchorStore.clear();
+      return;
+    }
+    final phase = switch (_engine.phase) {
+      FocusPhase.working => FocusPhaseName.working,
+      FocusPhase.resting => FocusPhaseName.resting,
+      _ => FocusPhaseName.paused,
+    };
+    final anchor = FocusAnchor(
+      uid: _session.uid,
+      startedAt: _session.startedAt,
+      phase: phase,
+      phaseSince: DateTime.now(),
+      workedBefore: _engine.focused,
+      restedBefore: _engine.rested,
+      workMinutes: _engine.workMinutes,
+      restMinutes: _engine.restMinutes,
+    );
+    _anchor = anchor;
+    FocusAnchorStore.save(anchor);
+  }
+
   /// 结算一次会话（实现挪到 `mod/focus_suspend.dart`，专注首页也要用同一份）
-  void _settle(FocusSession session, {required bool completed}) =>
-      settleFocusSession(_db, session, completed: completed);
+  ///
+  /// ===== MOD: 结算前先重锚一次（2026-09-21）=====
+  /// 锚点的数由墙上时钟推出来，比"每 10 秒落一次库的累加值"更接近真实；
+  /// 而**先重锚**这一步很关键：它把"这一刻的准确累计"固定进 workedBefore，
+  /// 于是后面无论隔多久再算，都不会把 App 已经死掉的那段算进去。
+  void _settle(FocusSession session, {required bool completed}) {
+    final anchor = _anchor;
+    if (anchor != null && anchor.uid == session.uid) {
+      _syncAnchor();
+      final fresh = _anchor;
+      if (fresh != null) {
+        session.focusedTime = fresh.workedBefore;
+        session.restTime = fresh.restedBefore;
+      }
+    }
+    settleFocusSession(_db, session, completed: completed);
+  }
 
   Future<void> _finish() async {
     _ticker?.cancel();
@@ -314,6 +402,7 @@ class _FocusPageState extends State<FocusPage> {
     _settle(_session, completed: true);
     // 既然结算了，"还有一次专注没结束"的入口就不能再留着
     _db?.clearSuspendedFocus();
+    _syncAnchor(clear: true); // 结束了，锚点也要清掉
     if (mounted) Navigator.of(context).pop(true);
   }
 
@@ -407,12 +496,15 @@ class _FocusPageState extends State<FocusPage> {
     return Duration(minutes: _workMinutes);
   }
 
+  /// 状态说法按用户指定的三个词来（2026-09-21）：
+  /// 「直接算起止时间 + 增设一个状态变量（中断中，进行中，休息中）」
+  ///
+  /// 这三态与 mod/focus_anchor.dart 的 FocusPhaseName 一一对应，
+  /// 也就是持久化进锚点的那份状态 —— 界面上看到的和存下来的是同一件事。
   String get _phaseText {
-    if (_engine.isPaused) {
-      return _engine.remaining == Duration.zero ? '已暂停' : '已暂停';
-    }
-    if (_engine.isResting) return '休息中';
-    return '工作中';
+    if (_engine.isPaused) return FocusPhaseName.paused.label; // 中断中
+    if (_engine.isResting) return FocusPhaseName.resting.label; // 休息中
+    return FocusPhaseName.working.label; // 进行中
   }
 
   String get _phaseHint {
