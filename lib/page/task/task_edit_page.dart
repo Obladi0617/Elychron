@@ -265,10 +265,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
     );
     if (result == null || !mounted) return;
     setState(() {
-      now.endTime = result;
-      if (now.isEvent && now.startTime.isAfter(now.endTime)) {
-        now.startTime = now.endTime;
-      }
+      now.updateEndTime(result);
       _syncReminder();
     });
   }
