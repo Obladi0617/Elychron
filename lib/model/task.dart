@@ -515,6 +515,20 @@ class Task {
     type = startTime.isBefore(endTime) ? TaskType.fixed : TaskType.deadline;
   }
 
+  /// 修改结束/截止时间时，保留用户已经选择的时间语义。
+  ///
+  /// 截止任务只有一个时间点：移动截止时间时必须同步 startTime，
+  /// 否则后续 normalizeType() 会把延后的截止任务误判成活动。
+  /// 活动则保留原开始时间；若新结束时间早于开始时间，收为单时刻。
+  void updateEndTime(DateTime newEndTime) {
+    endTime = newEndTime;
+    if (type == TaskType.deadline) {
+      startTime = newEndTime;
+    } else if (isEvent && startTime.isAfter(newEndTime)) {
+      startTime = newEndTime;
+    }
+  }
+
   /// 显式切换时间语义：把时间字段调整成该类型需要的样子。
   ///
   /// 与 [normalizeType] 不同，这里之后**不会**再被起止时间自动翻转：
