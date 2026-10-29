@@ -110,6 +110,72 @@ void main() {
     });
   });
 
+  group('Issue #11：调整结束时间不应把截止任务转成活动', () {
+    test('延期：原截止日不能变成活动开始时间', () {
+      final t = moment(DateTime(2026, 11, 1, 18));
+      final moved = DateTime(2026, 11, 3, 18);
+
+      t.updateEndTime(moved);
+      t.normalizeType(); // 模拟详情页保存前的归一化
+
+      expect(t.type, TaskType.deadline);
+      expect(t.startTime, moved);
+      expect(t.endTime, moved);
+      expect(t.hasTimeRange, isFalse);
+      expect(t.reminderAnchor, moved);
+    });
+
+    test('提前：新时间同样保持单时刻截止', () {
+      final t = moment(DateTime(2026, 11, 3, 18));
+      final moved = DateTime(2026, 11, 1, 18);
+
+      t.updateEndTime(moved);
+      t.normalizeType(); // 也覆盖「其他日期」面板的推断
+
+      expect(t.type, TaskType.deadline);
+      expect(t.startTime, moved);
+      expect(t.endTime, moved);
+    });
+
+    test('活动延期：原开始时间保持不变', () {
+      final t = makeTask(type: TaskType.fixed);
+      final start = t.startTime;
+      final moved = DateTime(2026, 9, 11, 22);
+
+      t.updateEndTime(moved);
+      t.normalizeType();
+
+      expect(t.type, TaskType.fixed);
+      expect(t.startTime, start);
+      expect(t.endTime, moved);
+    });
+
+    test('活动缩短但仍有时段：开始时间保持不变', () {
+      final t = makeTask(type: TaskType.fixed);
+      final start = t.startTime;
+      final moved = DateTime(2026, 9, 11, 16);
+
+      t.updateEndTime(moved);
+      t.normalizeType();
+
+      expect(t.type, TaskType.fixed);
+      expect(t.startTime, start);
+      expect(t.endTime, moved);
+    });
+
+    test('活动结束时间早于开始时间：按现有规则退化为单时刻', () {
+      final t = makeTask(type: TaskType.fixed);
+      final moved = DateTime(2026, 9, 11, 12);
+
+      t.updateEndTime(moved);
+      t.normalizeType();
+
+      expect(t.type, TaskType.deadline);
+      expect(t.startTime, moved);
+      expect(t.endTime, moved);
+    });
+  });
+
   group('枚举序号必须稳定（Hive 兼容）', () {
     test('已有值序号不变，新值追加在后面', () {
       expect(TaskType.deadline.index, 0);
