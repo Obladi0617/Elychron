@@ -77,11 +77,7 @@ class _TaskTimePanelState extends State<_TaskTimePanel> {
       title: '截止时间',
     );
     if (result == null) return;
-    _task.endTime = result;
-    if (_task.hasTimeRange && !_task.endTime.isAfter(_task.startTime)) {
-      // 截止时间不晚于开始时间：取消时段，退化为普通待办
-      _task.startTime = _task.endTime;
-    }
+    _task.updateEndTime(result);
     // 时间变了：失效的提醒时间按该类型的锚点 − 提前量重算。
     // 活动锚开始时间；截止与提醒锚那一刻。
     if (_task.reminderEnabled) {
